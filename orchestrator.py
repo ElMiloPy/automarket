@@ -62,7 +62,8 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
         max_attempts = 15
 
         for attempt in range(1, max_attempts + 1):
-            page.mouse.wheel(0, 2500)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.keyboard.press("PageDown")
             time.sleep(1.5)
 
             # Check if any Facebook loading element (image alt or aria-label) is present
