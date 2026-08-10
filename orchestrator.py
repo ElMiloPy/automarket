@@ -41,8 +41,8 @@ def check_llama_health(server_url: str) -> bool:
     return False
 
 
-def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scroll_wait: int = 3, max_items: int = 25) -> str:
-    """Connects to Brave Browser via CDP, dynamically scrolls until Facebook's loading state finishes, and extracts Marketplace listings."""
+def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scroll_wait: int = 3) -> str:
+    """Connects to Brave Browser via CDP, scrolls until 'Results from outside your search' appears, and extracts all Marketplace listings."""
     if not check_cdp_health(cdp_url):
         raise ConnectionError(
             f"Brave CDP port non-responsive at {cdp_url}.\n"
@@ -58,7 +58,7 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
         page.goto(target_url, wait_until="domcontentloaded")
 
         print("[Scraper] Scrolling every 1s until 'Results from outside your search' appears...")
-        max_scrolls = 25
+        max_scrolls = 40
 
         for scroll_count in range(1, max_scrolls + 1):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -68,14 +68,9 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
             current_count = page.locator('a[href*="/marketplace/item/"]').count()
             print(f"  Scroll {scroll_count}: {current_count} listing(s) loaded so far...")
 
-            # Check if "Results from outside your search" divider is present in DOM
             page_content = page.content()
             if "Results from outside your search" in page_content or "Resultados fuera de tu búsqueda" in page_content:
                 print("[Scraper] Found 'Results from outside your search' divider! Stopping scroll.")
-                break
-
-            if max_items and current_count >= max_items * 2:
-                print(f"[Scraper] Reached requested item limit ({current_count} listings).")
                 break
 
         time.sleep(scroll_wait)
@@ -94,8 +89,8 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
                     if text:
                         items.append(f"Title/Info: {text} | Link: {clean_url}")
 
-        print(f"[Scraper] Extracted {len(items)} listing(s). Selected top {min(len(items), max_items)}.")
-        return "\n".join(items[:max_items]) if items else soup.get_text(separator="\n", strip=True)[:3000]
+        print(f"[Scraper] Extracted all {len(items)} listing(s). Passing all to LLM.")
+        return "\n".join(items) if items else soup.get_text(separator="\n", strip=True)[:3000]
 
 
 def query_llama_server(scraped_text: str, user_query: str, server_url: str = DEFAULT_SERVER_URL) -> str:
@@ -123,7 +118,7 @@ Return ONLY valid JSON format.
             }
         ],
         "temperature": 0.1,
-        "max_tokens": 1500
+        "max_tokens": 2500
     }
 
     try:
@@ -140,8 +135,7 @@ def main():
     parser.add_argument("--query", default=DEFAULT_QUERY, help="User query for filtering deals")
     parser.add_argument("--server-url", default=DEFAULT_SERVER_URL, help="llama-server endpoint")
     parser.add_argument("--cdp-url", default=DEFAULT_CDP_URL, help="Brave CDP URL")
-    parser.add_argument("--scroll-wait", type=int, default=5, help="Seconds to wait after scrolling")
-    parser.add_argument("--max-items", type=int, default=25, help="Max items to send to LLM")
+    parser.add_argument("--scroll-wait", type=int, default=3, help="Seconds to wait after scrolling")
     parser.add_argument("--output", help="Filepath to save extracted JSON result")
     parser.add_argument("--check-health", action="store_true", help="Run health diagnostics and exit")
 
@@ -155,7 +149,7 @@ def main():
         sys.exit(0 if (cdp_ok and llama_ok) else 1)
 
     print("=== Automarket AI Pipeline Starting ===")
-    scraped_content = scrape_marketplace_page(args.target_url, args.cdp_url, args.scroll_wait, args.max_items)
+    scraped_content = scrape_marketplace_page(args.target_url, args.cdp_url, args.scroll_wait)
     result = query_llama_server(scraped_content, args.query, args.server_url)
 
     print("\n=================== ORCHESTRATED AI RESULT ===================")

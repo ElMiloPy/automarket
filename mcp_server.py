@@ -16,13 +16,12 @@ mcp = FastMCP("Automarket Marketplace Scraper")
 
 
 @mcp.tool()
-def search_facebook_marketplace(query: str, max_items: int = 20, cdp_url: str = DEFAULT_CDP_URL) -> str:
+def search_facebook_marketplace(query: str, cdp_url: str = DEFAULT_CDP_URL) -> str:
     """
     Scrapes Facebook Marketplace for items matching a search query using Brave Browser over CDP.
 
     Args:
         query: The search term (e.g. '32gb sodimm ddr5' or 'rtx 4090').
-        max_items: Maximum listing items to return (default 20).
         cdp_url: Brave CDP URL (default http://127.0.0.1:9222).
     """
     encoded_query = urllib.parse.quote(query)
@@ -33,8 +32,7 @@ def search_facebook_marketplace(query: str, max_items: int = 20, cdp_url: str = 
         results = scrape_marketplace_page(
             target_url=target_url,
             cdp_url=cdp_url,
-            scroll_wait=4,
-            max_items=max_items
+            scroll_wait=3
         )
         return f"Scraped Marketplace Listings for query '{query}':\n\n{results}"
     except Exception as err:
