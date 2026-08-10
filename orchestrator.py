@@ -41,8 +41,8 @@ def check_llama_health(server_url: str) -> bool:
     return False
 
 
-def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scroll_wait: int = 5, max_items: int = 25) -> str:
-    """Connects to Brave Browser via CDP, scrolls page, and extracts Marketplace listings."""
+def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scroll_wait: int = 3, max_items: int = 25) -> str:
+    """Connects to Brave Browser via CDP, dynamically scrolls until Facebook's loading state finishes, and extracts Marketplace listings."""
     if not check_cdp_health(cdp_url):
         raise ConnectionError(
             f"Brave CDP port non-responsive at {cdp_url}.\n"
@@ -57,13 +57,32 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
         print(f"[Scraper] Navigating to: {target_url}")
         page.goto(target_url, wait_until="domcontentloaded")
 
-        print("[Scraper] Scrolling down to populate lazy-loaded listings...")
-        for _ in range(3):
-            page.mouse.wheel(0, 1500)
-            time.sleep(1)
+        print("[Scraper] Dynamically scrolling until loading indicator completes...")
+        prev_count = 0
+        max_attempts = 15
+
+        for attempt in range(1, max_attempts + 1):
+            page.mouse.wheel(0, 2500)
+            time.sleep(1.5)
+
+            # Check if any Facebook loading element (image alt or aria-label) is present
+            loading_indicator = page.query_selector('img[alt*="Loading"], div[aria-label="Loading..."], div[data-visualcompletion="loading-state"]')
+            current_count = page.locator('a[href*="/marketplace/item/"]').count()
+
+            print(f"  Scroll {attempt}: {current_count} listing(s) loaded...")
+
+            # Stop when loading indicator is gone AND no new items are loaded
+            if not loading_indicator and current_count == prev_count and attempt > 2:
+                print("[Scraper] Reached end of page (loading indicator stopped appearing).")
+                break
+
+            if max_items and current_count >= max_items * 2:
+                print(f"[Scraper] Reached item threshold ({current_count} listings).")
+                break
+
+            prev_count = current_count
 
         time.sleep(scroll_wait)
-
         soup = BeautifulSoup(page.content(), "html.parser")
         page.close()
 
@@ -79,7 +98,7 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
                     if text:
                         items.append(f"Title/Info: {text} | Link: {clean_url}")
 
-        print(f"[Scraper] Found {len(items)} listing(s). Selected top {min(len(items), max_items)}.")
+        print(f"[Scraper] Extracted {len(items)} listing(s). Selected top {min(len(items), max_items)}.")
         return "\n".join(items[:max_items]) if items else soup.get_text(separator="\n", strip=True)[:3000]
 
 
