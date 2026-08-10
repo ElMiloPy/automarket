@@ -57,31 +57,39 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
         print(f"[Scraper] Navigating to: {target_url}")
         page.goto(target_url, wait_until="domcontentloaded")
 
-        print("[Scraper] Dynamically scrolling until loading indicator completes...")
+        print("[Scraper] Dynamically scrolling via PageDown...")
         prev_count = 0
-        max_attempts = 15
+        prev_height = 0
+        consecutive_no_growth = 0
+        max_scrolls = 40
 
-        for attempt in range(1, max_attempts + 1):
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        for scroll_count in range(1, max_scrolls + 1):
             page.keyboard.press("PageDown")
-            time.sleep(1.5)
+            page.evaluate("window.scrollBy(0, 1200)")
+            time.sleep(0.8)
 
-            # Check if any Facebook loading element (image alt or aria-label) is present
-            loading_indicator = page.query_selector('img[alt*="Loading"], div[aria-label="Loading..."], div[data-visualcompletion="loading-state"]')
             current_count = page.locator('a[href*="/marketplace/item/"]').count()
+            current_height = page.evaluate("window.scrollY + window.innerHeight")
 
-            print(f"  Scroll {attempt}: {current_count} listing(s) loaded...")
-
-            # Stop when loading indicator is gone AND no new items are loaded
-            if not loading_indicator and current_count == prev_count and attempt > 2:
-                print("[Scraper] Reached end of page (loading indicator stopped appearing).")
-                break
+            # If new items loaded or page scroll position expanded
+            if current_count > prev_count or current_height > prev_height:
+                consecutive_no_growth = 0
+                if scroll_count % 3 == 0 or current_count != prev_count:
+                    print(f"  PageDown {scroll_count}: {current_count} listing(s) loaded...")
+            else:
+                consecutive_no_growth += 1
 
             if max_items and current_count >= max_items * 2:
-                print(f"[Scraper] Reached item threshold ({current_count} listings).")
+                print(f"[Scraper] Reached requested item limit ({current_count} listings loaded).")
+                break
+
+            # Stop only after 4 consecutive PageDown presses yield no new height or items
+            if consecutive_no_growth >= 4:
+                print(f"[Scraper] Reached end of page ({current_count} total listings loaded).")
                 break
 
             prev_count = current_count
+            prev_height = current_height
 
         time.sleep(scroll_wait)
         soup = BeautifulSoup(page.content(), "html.parser")
