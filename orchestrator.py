@@ -57,42 +57,26 @@ def scrape_marketplace_page(target_url: str, cdp_url: str = DEFAULT_CDP_URL, scr
         print(f"[Scraper] Navigating to: {target_url}")
         page.goto(target_url, wait_until="domcontentloaded")
 
-        print("[Scraper] Dynamically scrolling batch-by-batch (waiting for loading transitions)...")
-        prev_count = 0
-        max_batches = 20
-        LOADING_SELECTOR = 'div[aria-label="Loading..."], div[data-visualcompletion="loading-state"], img[alt*="Loading"]'
+        print("[Scraper] Scrolling every 1s until 'Results from outside your search' appears...")
+        max_scrolls = 25
 
-        for batch in range(1, max_batches + 1):
+        for scroll_count in range(1, max_scrolls + 1):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.keyboard.press("PageDown")
-
-            # 1. Wait briefly for loading indicator to appear
-            try:
-                page.wait_for_selector(LOADING_SELECTOR, timeout=2000, state="attached")
-            except Exception:
-                pass
-
-            # 2. Wait for loading indicator to disappear (batch finishes rendering)
-            try:
-                page.wait_for_selector(LOADING_SELECTOR, timeout=4000, state="detached")
-            except Exception:
-                pass
-
             time.sleep(1.0)
-            current_count = page.locator('a[href*="/marketplace/item/"]').count()
-            print(f"  Batch {batch}: {current_count} listing(s) loaded so far...")
 
-            # Exit if count stopped growing AND no loading indicator is present
-            has_loading = page.query_selector(LOADING_SELECTOR)
-            if current_count == prev_count and not has_loading and batch > 1:
-                print("[Scraper] End of page reached (no further loading indicators appeared).")
+            current_count = page.locator('a[href*="/marketplace/item/"]').count()
+            print(f"  Scroll {scroll_count}: {current_count} listing(s) loaded so far...")
+
+            # Check if "Results from outside your search" divider is present in DOM
+            page_content = page.content()
+            if "Results from outside your search" in page_content or "Resultados fuera de tu búsqueda" in page_content:
+                print("[Scraper] Found 'Results from outside your search' divider! Stopping scroll.")
                 break
 
             if max_items and current_count >= max_items * 2:
                 print(f"[Scraper] Reached requested item limit ({current_count} listings).")
                 break
-
-            prev_count = current_count
 
         time.sleep(scroll_wait)
         soup = BeautifulSoup(page.content(), "html.parser")
