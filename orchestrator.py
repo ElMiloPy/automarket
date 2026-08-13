@@ -40,8 +40,8 @@ def scrape_marketplace(query: str, cdp_url: str = CDP_URL) -> str:
                 no_increase_count = 0
             else:
                 no_increase_count += 1
-                if no_increase_count >= 3:
-                    print("[Scraper] Item count did not increase after 3 consecutive scrolls. Stopping scroll.")
+                if no_increase_count >= 5:
+                    print("[Scraper] Item count did not increase after 5 consecutive scrolls. Stopping scroll.")
                     break
 
         soup = BeautifulSoup(page.content(), "html.parser")
