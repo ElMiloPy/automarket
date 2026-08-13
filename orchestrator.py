@@ -19,16 +19,30 @@ def scrape_marketplace(query: str, cdp_url: str = CDP_URL) -> str:
         page = (browser.contexts[0] if browser.contexts else browser.new_context()).new_page()
         page.goto(target_url, wait_until="domcontentloaded")
 
-        print("[Scraper] Scrolling until 'Results from outside your search' appears...")
-        for _ in range(40):
+        print("[Scraper] Scrolling until item count does not increase for 3 consecutive scrolls...")
+        no_increase_count = 0
+        last_item_count = 0
+
+        for scroll_step in range(100):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.keyboard.press("PageDown")
             time.sleep(1.0)
 
-            content = page.content()
-            if "Results from outside your search" in content or "Resultados fuera de tu búsqueda" in content:
-                print("[Scraper] End of search results reached.")
-                break
+            urls = page.evaluate('''() => {
+                const anchors = Array.from(document.querySelectorAll('a[href*="/marketplace/item/"]'));
+                return anchors.map(a => a.href.split('?')[0]).filter(Boolean);
+            }''')
+            current_count = len(set(urls))
+            print(f"[Scraper] Scroll {scroll_step + 1}: {current_count} items found.")
+
+            if current_count > last_item_count:
+                last_item_count = current_count
+                no_increase_count = 0
+            else:
+                no_increase_count += 1
+                if no_increase_count >= 3:
+                    print("[Scraper] Item count did not increase after 3 consecutive scrolls. Stopping scroll.")
+                    break
 
         soup = BeautifulSoup(page.content(), "html.parser")
         page.close()
