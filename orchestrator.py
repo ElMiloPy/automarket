@@ -19,42 +19,49 @@ def scrape_marketplace(query: str, cdp_url: str = CDP_URL) -> str:
         page = (browser.contexts[0] if browser.contexts else browser.new_context()).new_page()
         page.goto(target_url, wait_until="domcontentloaded")
 
-        print("[Scraper] Scrolling until item count does not increase for 3 consecutive scrolls...")
+        print("[Scraper] Scrolling until no new items are found after 3 consecutive scrolls...")
+        collected_items = {}
         no_increase_count = 0
-        last_item_count = 0
 
         for scroll_step in range(100):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.keyboard.press("PageDown")
             time.sleep(1.0)
 
-            urls = page.evaluate('''() => {
+            # Extract items currently in DOM before Facebook unmounts/virtualizes them
+            raw_items = page.evaluate('''() => {
                 const anchors = Array.from(document.querySelectorAll('a[href*="/marketplace/item/"]'));
-                return anchors.map(a => a.href.split('?')[0]).filter(Boolean);
+                return anchors.map(a => {
+                    const href = a.getAttribute('href') || '';
+                    const cleanPath = href.split('?')[0];
+                    const fullUrl = cleanPath.startsWith('http') ? cleanPath : 'https://www.facebook.com' + cleanPath;
+                    const text = (a.innerText || a.textContent || '').trim().replace(/[\\r\\n]+/g, ' | ');
+                    return { url: fullUrl, text: text };
+                }).filter(item => item.url && item.text);
             }''')
-            current_count = len(set(urls))
-            print(f"[Scraper] Scroll {scroll_step + 1}: {current_count} items found.")
 
-            if current_count > last_item_count:
-                last_item_count = current_count
+            new_items = 0
+            for item in raw_items:
+                url = item["url"]
+                text = item["text"]
+                if url not in collected_items:
+                    collected_items[url] = f"Title: {text} | Link: {url}"
+                    new_items += 1
+
+            total_count = len(collected_items)
+            print(f"[Scraper] Scroll {scroll_step + 1}: {total_count} total unique items collected (+{new_items} new).")
+
+            if new_items > 0:
                 no_increase_count = 0
             else:
                 no_increase_count += 1
-                if no_increase_count >= 5:
-                    print("[Scraper] Item count did not increase after 5 consecutive scrolls. Stopping scroll.")
+                if no_increase_count >= 3:
+                    print("[Scraper] No new items found after 3 consecutive scrolls. Stopping scroll.")
                     break
 
-        soup = BeautifulSoup(page.content(), "html.parser")
         page.close()
 
-        items, seen = [], set()
-        for a in soup.find_all("a", href=True):
-            if "/marketplace/item/" in a["href"]:
-                url = f"https://www.facebook.com{a['href'].split('?')[0]}"
-                if url not in seen and a.get_text(strip=True):
-                    seen.add(url)
-                    items.append(f"Title: {a.get_text(' | ', strip=True)} | Link: {url}")
-
+        items = list(collected_items.values())
         print(f"[Scraper] Extracted all {len(items)} items.")
         return "\n".join(items) if items else "No items found."
 
